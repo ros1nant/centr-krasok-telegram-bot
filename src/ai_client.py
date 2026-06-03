@@ -18,6 +18,14 @@ class LLMError(Exception):
     """Ошибка при обращении к LLM (Ollama, Gemini и др.)."""
 
 
+class LLMQuotaError(LLMError):
+    """Исчерпана квота API (429)."""
+
+
+class LLMAuthError(LLMError):
+    """Неверный или неподходящий API-ключ."""
+
+
 async def chat_completion(
     system_prompt: str,
     messages: list[dict[str, str]],
@@ -103,14 +111,19 @@ async def _gemini_chat(
             response.raise_for_status()
             data = response.json()
     except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
         detail = ""
         try:
             detail = exc.response.json().get("error", {}).get("message", "")
         except Exception:
             pass
-        raise LLMError(
-            f"Gemini: HTTP {exc.response.status_code}. {detail}".strip()
-        ) from exc
+        detail_lower = detail.lower()
+        if status == 429 or "quota" in detail_lower or "rate limit" in detail_lower:
+            raise LLMQuotaError(detail or "quota exceeded") from exc
+        if status in (401, 403) or "api key" in detail_lower or "permission" in detail_lower:
+            raise LLMAuthError(detail or "invalid API key") from exc
+        logger.error("Gemini HTTP %s: %s", status, detail[:500])
+        raise LLMError(f"Gemini: HTTP {status}") from exc
     except httpx.TimeoutException as exc:
         raise LLMError("Превышено время ожидания ответа от Gemini.") from exc
 

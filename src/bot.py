@@ -1,10 +1,10 @@
 import logging
 
-from telegram import Update
+from telegram import Update, User
 from telegram.constants import ChatAction
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
-from src.ai_client import LLMError, chat_completion
+from src.ai_client import LLMAuthError, LLMError, LLMQuotaError, chat_completion
 from src.config import (
     LLM_PROVIDER,
     MAX_CONTEXT_MESSAGES,
@@ -24,12 +24,29 @@ from src.knowledge import build_system_prompt, load_knowledge
 
 logger = logging.getLogger(__name__)
 
-WELCOME = (
-    "Здравствуйте! Я AI-ассистент «Центр Красок #1».\n\n"
-    "Спросите о нашей компании: услуги, салоны в Алматы и Астане, "
-    "бренды, доставка, программы для дизайнеров и строителей.\n\n"
-    "Просто напишите вопрос — команды не нужны."
-)
+EXAMPLE_QUESTIONS = [
+    "Чем занимается компания?",
+    "Какие услуги предоставляет?",
+    "Где находится офис?",
+    "Какие бренды есть в каталоге?",
+    "Кто клиенты компании?",
+    "Есть ли вакансии?",
+    "Как связаться с менеджером?",
+]
+
+GREETING_TRIGGERS = {
+    "/start",
+    "start",
+    "привет",
+    "здравствуйте",
+    "здравствуй",
+    "добрый день",
+    "добрый вечер",
+    "доброе утро",
+    "hello",
+    "hi",
+    "hey",
+}
 
 THINKING = "Секунду, подбираю ответ..."
 
@@ -44,6 +61,35 @@ def get_system_prompt() -> str:
     return _system_prompt
 
 
+def _display_name(user: User | None) -> str:
+    if not user:
+        return "друг"
+    if user.username:
+        return f"@{user.username}"
+    if user.first_name:
+        return user.first_name
+    return "друг"
+
+
+def build_welcome_message(user: User | None) -> str:
+    name = _display_name(user)
+    examples = "\n".join(f"• {q}" for q in EXAMPLE_QUESTIONS)
+    return (
+        f"Здравствуйте, {name}!\n\n"
+        "Я AI-ассистент «Центр Красок #1» — помогу с вопросами о нашей компании.\n\n"
+        "Просто напишите сообщение, как в обычном чате. Вот примеры вопросов:\n\n"
+        f"{examples}\n\n"
+        "Скопируйте любой вопрос или задайте свой."
+    )
+
+
+def _is_greeting(text: str) -> bool:
+    normalized = text.lower().strip()
+    if normalized in GREETING_TRIGGERS:
+        return True
+    return normalized.startswith("/start")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_chat:
         return
@@ -54,9 +100,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not user_text:
         return
 
-    # Первое сообщение /start — приветствие без вызова AI
-    if user_text.lower() in {"/start", "start"}:
-        await update.message.reply_text(WELCOME)
+    if _is_greeting(user_text):
+        await update.message.reply_text(
+            build_welcome_message(update.effective_user)
+        )
         return
 
     if is_likely_off_topic(user_text):
@@ -74,22 +121,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply = sanitize_reply(reply, MAX_REPLY_LENGTH)
         if not reply:
             reply = FALLBACK_NO_INFO
+    except LLMQuotaError:
+        logger.warning("Gemini quota exceeded")
+        reply = (
+            "Сейчас исчерпан бесплатный лимит запросов к AI (Google Gemini).\n\n"
+            "Что можно сделать:\n"
+            "• подождать до завтра (лимит обновляется раз в сутки);\n"
+            "• в .env сменить модель, например: GEMINI_MODEL=gemini-2.5-flash-lite;\n"
+            "• или перейти на Ollama локально: LLM_PROVIDER=ollama.\n\n"
+            "По срочным вопросам — менеджеры: +7 (777) 292-84-01, https://centr-krasok.kz/"
+        )
+        context_store.clear(chat_id)
+    except LLMAuthError:
+        logger.error("Gemini auth error — проверьте API-ключ")
+        reply = (
+            "Не удалось подключиться к AI: проверьте ключ Gemini в .env.\n\n"
+            "Нужен ключ из Google AI Studio (начинается с AIzaSy...):\n"
+            "https://aistudio.google.com/apikey\n\n"
+            "Контакты: +7 (777) 292-84-01, https://centr-krasok.kz/"
+        )
+        context_store.clear(chat_id)
     except LLMError as exc:
         logger.exception("LLM error (%s)", LLM_PROVIDER)
-        if LLM_PROVIDER == "gemini":
-            hint = (
-                "Проверьте GEMINI_API_KEY и GEMINI_MODEL в .env "
-                "(ключ: https://aistudio.google.com/apikey)."
-            )
-        else:
-            hint = (
-                "Проверьте, что Ollama запущена, модель скачана "
-                "(OLLAMA_BASE_URL, OLLAMA_MODEL)."
-            )
         reply = (
-            f"Сейчас не могу получить ответ от AI ({exc}).\n\n{hint}\n\n"
-            "Контакты компании: +7 (777) 292-84-01, https://centr-krasok.kz/"
+            "Сейчас не могу сформировать ответ. Попробуйте через минуту.\n\n"
+            f"Контакты: +7 (777) 292-84-01, https://centr-krasok.kz/"
         )
+        logger.debug("LLM detail: %s", exc)
         context_store.clear(chat_id)
     except Exception:
         logger.exception("Unexpected error")

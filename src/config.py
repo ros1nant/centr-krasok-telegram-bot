@@ -1,8 +1,11 @@
+import logging
 import os
 import re
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
@@ -46,7 +49,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 # --- Google Gemini (облако, API-ключ) ---
 # Ключ: https://aistudio.google.com/apikey
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 _GEMINI_PLACEHOLDERS = {"", "ВСТАВЬТЕ_GEMINI_API_KEY", "your_gemini_api_key_here"}
 
@@ -63,8 +66,13 @@ def validate_llm_config() -> None:
         if GEMINI_API_KEY in _GEMINI_PLACEHOLDERS or "ВСТАВЬТЕ" in GEMINI_API_KEY.upper():
             raise RuntimeError(
                 "Для Gemini задайте GEMINI_API_KEY в .env\n"
-                "Ключ: https://aistudio.google.com/apikey\n"
+                "Ключ: https://aistudio.google.com/apikey (формат AIzaSy...)\n"
                 "И установите: LLM_PROVIDER=gemini"
+            )
+        if not GEMINI_API_KEY.startswith("AIza"):
+            logger.warning(
+                "GEMINI_API_KEY не начинается с AIza — возможно, это не ключ из AI Studio. "
+                "Создайте ключ: https://aistudio.google.com/apikey"
             )
         return
     raise RuntimeError(
