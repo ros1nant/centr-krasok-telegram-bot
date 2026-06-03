@@ -10,6 +10,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
+      - key: MISE_PYTHON_GITHUB_ATTESTATIONS
+        value: "false"
       - key: LLM_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
