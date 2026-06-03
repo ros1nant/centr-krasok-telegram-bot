@@ -1,0 +1,26 @@
+# Render Blueprint: Background Worker для Telegram polling
+# https://render.com/docs/background-workers
+
+services:
+  - type: worker
+    name: centr-krasok-telegram-bot
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash-lite
+      - key: LLM_TIMEOUT
+        value: "120"
+      - key: MAX_CONTEXT_MESSAGES
+        value: "8"
+      - key: MAX_REPLY_LENGTH
+        value: "4000"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
