@@ -25,11 +25,12 @@ _TOKEN_PATTERN = re.compile(r"^\d+:[A-Za-z0-9_-]{20,}$")
 def validate_telegram_token(token: str = TELEGRAM_BOT_TOKEN) -> None:
     if token in _TOKEN_PLACEHOLDERS or "ВСТАВЬТЕ" in token.upper():
         raise RuntimeError(
-            "В файле .env не задан TELEGRAM_BOT_TOKEN.\n"
-            "1. Откройте Telegram → @BotFather\n"
-            "2. Отправьте /newbot (или /token для существующего бота)\n"
-            "3. Скопируйте токен вида 123456789:AAHxxxxxxxx...\n"
-            "4. Вставьте в .env: TELEGRAM_BOT_TOKEN=ваш_токен"
+            "Не задан TELEGRAM_BOT_TOKEN.\n"
+            "Локально: файл .env\n"
+            "Render/Railway: вкладка Environment → Add Variable\n\n"
+            "1. Telegram → @BotFather → /token\n"
+            "2. Скопируйте токен: 123456789:AAH...\n"
+            "3. TELEGRAM_BOT_TOKEN=ваш_токен"
         )
     if not _TOKEN_PATTERN.match(token):
         raise RuntimeError(
@@ -65,9 +66,10 @@ def validate_llm_config() -> None:
     if LLM_PROVIDER == "gemini":
         if GEMINI_API_KEY in _GEMINI_PLACEHOLDERS or "ВСТАВЬТЕ" in GEMINI_API_KEY.upper():
             raise RuntimeError(
-                "Для Gemini задайте GEMINI_API_KEY в .env\n"
+                "Не задан GEMINI_API_KEY.\n"
+                "Локально: .env | Render/Railway: Environment Variables\n"
                 "Ключ: https://aistudio.google.com/apikey (формат AIzaSy...)\n"
-                "И установите: LLM_PROVIDER=gemini"
+                "LLM_PROVIDER=gemini"
             )
         if not GEMINI_API_KEY.startswith("AIza"):
             logger.warning(
